@@ -19,7 +19,7 @@ Echo:#         program:  CheckCSR		                                             
 Echo:#                                                                                   #
 Echo:#         purpose:  Tool to quickly pull info from a CSR                            #
 Echo:#                                                                                   #
-Echo:#         version:  0.1.0 (.19Jan26.AndrewD)                                        #
+Echo:#         version:  0.2.1 (.19Jan26.AndrewD)                                        #
 Echo:#                                                                                   #
 Echo:#          author:  Andrew Doan                                                     #
 Echo:#                                                                                   #
@@ -208,62 +208,14 @@ findstr /SIC:"AutoRegistration enabled = True" AliHRS*.log* >nul
     SET "AutoReg=1"
     )
 
-REM DiskImport option
+REM Error check option for Disk Import and Export
 	
 if defined DiskImportCheck (
-	Echo.
-	Echo ------ Disk Import Check ------
-	Echo.
-	Call :DiskRWConfig
-	Echo.
-	Echo Disk Import Workflow:
-REM --------------------------------------------------------------------------------------------------------------
-	REM HmiWebApps check - Unsupported SOP, Transfer Syntax, Network Name, extension, and Cyclic Redundancy (AddPatient unknown error)
-	REM MediaInspector check - Permissions, Path Length, and Transfer Syntax
-	REM AliDXVSal - 
-
-	if defined LogPicker (
-		Echo LogPicker Directory specified check
-
-		REM HmiWebService check - 
-		REM DiskImportChildSrv - Failed DICOM association
-		REM igen_WID - Check import status
-
-		) else (
-			Echo LogPicker Directory not specified
-			)
-
-	Echo Error: Feature still in development
-	goto :eof
+	Call :CheckDiskImport
 	)
 
-REM DiskExport option
-
 if defined DiskExportCheck (
-	Echo.
-	Echo ------ Disk Export Check ------
-	Echo.
-	Call :DiskRWConfig
-	Echo.
-	Echo Disk Export Workflow:
-REM --------------------------------------------------------------------------------------------------------------
-	REM HmiWebApps check - 
-	REM DiskBurnerService - 
-	REM AliDXVSal - 
-
-	if defined LogPicker (
-		Echo LogPicker Directory specified check
-		
-		REM HmiWebService check - 
-		REM DiskExport - 
-		REM ConvAgnt - 		
-		
-		) else (
-			Echo LogPicker Directory not specified
-			)
-
-	Echo Error: Feature still in development
-	goto :eof
+	Call :CheckDiskExport
 	)
 	
 REM Checks for memory load logs
@@ -328,8 +280,8 @@ If not defined foundpriors (
 	Echo ------ Opened Studies ------
 	Echo.
 
-	FOR /F "tokens=16" %%A IN (
-	'findstr /SIC "CREATING STUDY CONTEXT for Patient" AliHRS*.log* 2^>nul') DO (
+	FOR /F "tokens=17" %%A IN (
+	'findstr /SC:"FINISHED CREATING STUDY CONTEXT for Patient" AliHRS*.log* 2^>nul') DO (
 		Echo Anchor Study: %%A
 		)
 
@@ -338,32 +290,10 @@ If not defined foundpriors (
 		)
 	)
 
-REM Search for Large Delays
-
-If defined LogPicker (
-    If defined CSRStart (
-		If defined SlownessCheck (
-			Call :ExcessiveTimes
-		) else if defined errorcheck (
-			Call :ExcessiveTimes
-		)
-		)
-    )
-
 REM Check for Common Errors
 
 if defined errorcheck (
-REM ---------------------------------------------------------------------------------------
-	Echo.
-	Echo: ------ Common Error Check ------
-	Echo.
-
-REM ---------------------------------------------------------------------------------------
-if defined StudyID (
-	Echo Feature In Development
-	)
-	Echo Error: Feature In Development
-REM ---------------------------------------------------------------------------------------
+	Call :GeneralErrorCheck
 	)
 
 REM Study Checks
@@ -389,7 +319,6 @@ For /F "delims=" %%F in ('checkindex -s !StudyID! ^| grep -A 50 "Bag Summary:"')
 REM RUID Search on StudyID
 
 Call :opentimes
-Call :FileFragments
 
 REM RUID Search on Priors
 
@@ -403,7 +332,6 @@ if defined Priors (
 					if not errorlevel 1 (
 						SET "StudyID=%%A"
 						Call :opentimes
-						Call :FileFragments
 						)
 					)
 				)
@@ -414,10 +342,9 @@ if defined Priors (
 REM Performance Check on Opened Studies
 
 if defined SlownessCheck (
-	FOR /F "tokens=16" %%A IN (
-	'findstr /SIC "CREATING STUDY CONTEXT for Patient" AliHRS*.log* 2^>nul') DO (
+	FOR /F "tokens=17" %%A IN (
+	'findstr /SC:"FINISHED CREATING STUDY CONTEXT for Patient" AliHRS*.log* 2^>nul') DO (
 		SET "StudyID=%%A"
-		SET "StudyID=!StudyID:~0,-1!"
 		SET "StudyStartTime="
 		SET "StudyEndTime="
 		Call :opentimes
@@ -431,8 +358,21 @@ if defined SlownessCheck (
 		Call :opentimes
 		)
 	)
+	
+REM Search for Large Delays
+
+If defined LogPicker (
+    If defined CSRStart (
+		If defined SlownessCheck (
+			Call :ExcessiveTimes
+		) else if defined errorcheck (
+			Call :ExcessiveTimes
+		)
+		)
+    )
 
 popd
+Echo This tool is supplementary to troubleshooting. Confirm all issues with supporting logs!
 GOTO :eof
 
 REM ------ FUNCTIONS ------
@@ -443,23 +383,23 @@ Echo.
 Echo: ------ Open Study Times for StudyID !StudyID! ------
 echo.
 
-FOR /F "tokens=2,9*" %%A IN ('findstr /SIC "Openstudies" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
+FOR /F "tokens=2,8*" %%A IN ('findstr /SIC:"Openstudies" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
     SET "foundmatch=1"
     Echo %%A %%B %%C
     FOR /F "tokens=1,2,3,4 delims=:," %%W IN ("%%A") DO (SET "StudyStartTime=%%W%%X%%Y%%Z")
     )
 
-FOR /F "tokens=2,8*" %%I IN ('findstr /SIC:"load the first image for" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
+FOR /F "tokens=2,8*" %%I IN ('findstr /SC:"load the first image for" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
     SET "foundmatch=1"
     Echo %%I %%J %%K
     )
 
-FOR /F "tokens=2,8*" %%I IN ('findstr /SIC:"display first image for" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
+FOR /F "tokens=2,8*" %%I IN ('findstr /SC:"display first image for" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
     SET "foundmatch=1"
     Echo %%I %%J %%K
     )
 
-FOR /F "tokens=2,8*" %%A IN ('findstr /SIC:"fire loading" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
+FOR /F "tokens=2,8*" %%A IN ('findstr /SC:"Fire loading" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
     SET "foundmatch=1"
     Echo %%A %%B %%C
     FOR /F "tokens=1,2,3,4 delims=:," %%W IN ("%%A") DO (SET "StudyEndTime=%%W%%X%%Y%%Z")
@@ -504,10 +444,6 @@ If defined StudyEndTime (
     ) else (
 	    Echo End Time not Found
 		)
-
-exit /b
-
-:FileFragments
 
 Echo.
 Echo ------ File Fragments ------
@@ -613,20 +549,330 @@ For /F "tokens=2,4*" %%A IN ('findstr /S "!RUID!" "!LogPicker!\AliWebBEx*.log*" 
     )
 exit /b
 
-:DiskRWConfig
+REM ---------------------------------------------------------------------------------------
 
-Echo Applied DiskRW configurations:
-FOR /F "tokens=2* delims= :" %%I IN ('findstr /V /B /C:"#" "%ALI_SYS_CONFIG_PATH%\DiskRW.base" 2^>nul') DO (
-	findstr /C:"%%I" "%ALI_SITE_CONFIG_PATH%\DiskRW.site" >nul 2>&1
-	if errorlevel 1 (
-        Echo %%I %%J
-    ) else (
-		FOR /F "tokens=2*" %%A IN ('findstr /C:"%%I" "%ALI_SITE_CONFIG_PATH%\DiskRW.site" 2^>nul') DO (
-			Echo %%A %%B
+:GeneralErrorCheck
+
+Echo.
+Echo: ------ Common Error Check ------
+Echo.
+
+
+
+if defined StudyID (
+	Echo Feature In Development
+	) else ( Echo Feature In Development )
+
+Echo Feature In Development
+
+exit /b
+
+REM ---------------------------------------------------------------------------------------
+
+:CheckDiskImport
+
+Echo.
+Echo ------ Disk Import Check ------
+Echo.
+Echo:DiskRW.site Configs:
+FOR /F "tokens=* delims=" %%I IN ('findstr /V /B /C:"#" "%ALI_SIT_CONFIG_PATH%\DiskRW.site" 2^>nul') DO (
+	Echo %%I
+	)
+Echo.
+Echo Checking for errors in KB022226911434521:
+Echo.
+Echo Scenario 4B, and 5 requires LogPicker, Scenario 1, 2B, and 6 cannot be checked
+Echo.
+
+FOR /F "tokens=13" %%F in ('findstr /SIC:"Trying to create virtual DICOMDIR for path" MediaInspector* 2^>nul') DO (
+	SET "PathCheck=%%F"
+	if "!PathCheck:~127,1!" neq "" (
+		Echo File Path is 128 characters or greater; File Path Too Long
+		Echo !PathCheck!
+		Echo See KB220217115504897 or KB022226911434521:Scenario 2A
+		SET "founderror=1"
+		)
+	)
+
+FOR %%I IN ('findstr /SIC:"unsupported SOP" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Unsupported SOP Class
+		Echo %%I
+		Echo See KB210729145051080, KB230525104020800, or KB022226911434521:Scenario 3A
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%A IN ('findstr /SIC:"Transfer Syntax not found" MediaInspector* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found missing Transfer Syntax
+		Echo %%A
+		Echo See KB022226911434521:Scenario 3B
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%D IN ('findstr /SIC:"unsupported Transfer Syntax" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Unsupported Transfer Syntax
+		Echo %%D
+		Echo See KB210720144545237 or KB022226911434521:Scenario 3C
+		SET "founderror=1"
+		)
+	)
+
+FOR %%X IN ('findstr /SIC:"Data error (cyclic redundancy check)" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found possible data corruption on disk
+		Echo %%X
+		Echo See KB022226911434521:Scenario 3D
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%G IN ('findstr /SIC:"AddPatient - Unknown error" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Unknown Error regarding AddPatient
+		Echo %%G
+		Echo See KB022226911434521:Scenario 3E
+		SET "founderror=1"
+		)
+	)
+
+FOR %%B IN ('findstr /SIC:"The network name cannot be found" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Network Name Cannot be Found
+		Echo %%B
+		Echo See KB022226911434521:Scenario 4A
+		SET "founderror=1"
+		)
+	)
+
+FOR %%C IN ('findstr /SIC:"is not allowed (allowed extensions:" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Unsupported File Extension
+		Echo %%C
+		Echo See KB022226911434521:Scenario 4C
+		SET "founderror=1"
+		)
+	)
+
+if defined LogPicker (
+	FOR %%K IN ('findstr /SIC:"The maximum message size quota for incoming messages" HmiWebService* ^| grep -i "has been exceeded" 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Data Imported is too large, limit is 2GB
+			Echo %%K
+			Echo See KB210924174140653 or KB022226911434521:Scenario 4B
+			SET "founderror=1"
+			)
+		)
+
+	FOR %%T IN ('findstr /SIC:"Failed to initialize association" DiskImportChild* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Found Unknown Error regarding AddPatient
+			Echo %%T
+			Echo See KB250526134630553, KB210722162452767, or KB022226911434521:Scenario 5
+			SET "founderror=1"
 			)
 		)
 	)
-exit /b
+	
+if not defined founderror (
+	Echo Did not find any errors, please search logs manually for issues
+	)
+
+REM Echo Checking Full Disk Import Workflow:
+
+Echo This tool is used to quickly search for known issues. Confirm any issues found with supporting logs!
+goto :eof
+
+:CheckDiskExport
+
+Echo.
+Echo ------ Disk Export Check ------
+Echo.
+Echo:DiskRW.site Configs:
+FOR /F "tokens=* delims=" %%I IN ('findstr /V /B /C:"#" "%ALI_SIT_CONFIG_PATH%\DiskRW.site" 2^>nul') DO (
+	Echo %%I
+	)
+Echo.
+Echo Checking for errors in KB221019131513817:
+Echo.
+Echo Scenario 1 and 6 requires LogPicker, Scenario 3 cannot be checked
+Echo.
+
+FOR %%I IN ('findstr /SIC:"The current media is not supported" DiskBurnerService* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Current Media is Not Supported
+		Echo %%I
+		Echo See KB221019131513817:Scenario 2
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%A IN ('findstr /SIC:"fails to return true to IsReady query so returning false." HmiWebApps* ^| grep -i "Media.IsPresent()" 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Current Media is Not Supported
+		Echo %%A
+		Echo See KB221019131513817:Scenario 2
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%D IN ('findstr /SIC:"ExportStudiesOnServer() failed, return code = 505," HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Study Sequencing Preventing Export
+		Echo %%D
+		Echo See KB221019131513817:Scenario 4
+		SET "founderror=1"
+		)
+	)
+
+FOR %%B IN ('findstr /SIC:"call to UpdateAdvancedViewer() returned Failed" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Issues with Advanced Viewer files
+		Echo %%B
+		Echo See KB022226911434521:Scenario 5
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%Y IN ('findstr /SIC:"CheckCreateNewDirectory() failed for ClientAdvancedViewerDirectory" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Issues with Advanced Viewer files
+		Echo %%Y
+		Echo See KB022226911434521:Scenario 5
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%Z IN ('findstr /SIC:"caught exception = Some or all identity references could not be translated" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Issues with Advanced Viewer files
+		Echo %%Z
+		Echo See KB022226911434521:Scenario 5
+		SET "founderror=1"
+		)
+	)
+
+FOR %%B IN ('findstr /SIC:"_exportController.ExportStudiesOnServer() failed, return code = 708," HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Not Enough Space on Selected Media
+		Echo %%B
+		Echo See KB022226911434521:Scenario 6
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%B IN ('findstr /SIC:"Could not get HRS-D access COM error" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Invalid Path
+		Echo %%B
+		Echo See KB210721122002000
+		SET "founderror=1"
+		)
+	)
+	
+FOR %%B IN ('findstr /SIC:"Memory is locked" HmiWebApps* 2^>nul') DO (
+	if not errorlevel 1 (
+		Echo Found Invalid Path
+		Echo %%B
+		Echo See KB210721122002000
+		SET "founderror=1"
+		)
+	)
+
+if defined LogPicker (
+	FOR %%K IN ('findstr /SIC:"unable to find context PK" DiskExport* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Failed to Retrieve Study Information
+			Echo %%K
+			Echo See KB221019131513817:Scenario 1
+			SET "founderror=1"
+			)
+		)
+
+	FOR %%K IN ('findstr /SIC:"Not enough space on selected media" DiskExport* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Found Not Enough Space on Selected Media
+			Echo %%K
+			Echo See KB221019131513817:Scenario 6
+			SET "founderror=1"
+			)
+		)
+
+	FOR %%K IN ('findstr /SIC:"The network path was not found" HmiWebService* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Found Invalid Path
+			Echo %%K
+			Echo See KB210721122002000
+			SET "founderror=1"
+			)
+		)
+
+	FOR %%K IN ('findstr /SIC:"Failed to create directory" DiskExport* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Found Invalid Path
+			Echo %%K
+			Echo See KB210721122002000
+			SET "founderror=1"
+			)
+		)
+	
+	FOR %%K IN ('findstr /SIC:"Failed to export advanced viewer metadata on media" DiskExport* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Couldn't Open SAL Study
+			Echo %%K
+			Echo See KB220706114417100
+			SET "founderror=1"
+			)
+		)
+
+	FOR %%K IN ('findstr /SIC:"Failed to export advanced viewer metadata" DiskExport* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Couldn't Open SAL Study
+			Echo %%K
+			Echo See KB220706114417100
+			SET "founderror=1"
+			)
+		)
+	
+	FOR %%K IN ('findstr /SIC:"Call to Backend Pacs SAL OpenStudy method failed" ConvAgnt* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Couldn't Open SAL Study
+			Echo %%K
+			Echo See KB220706114417100
+			SET "founderror=1"
+			)
+		)
+
+	FOR %%K IN ('findstr /SIC:"Failed to save Metadata" ConvAgnt* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Couldn't Open SAL Study
+			Echo %%K
+			Echo See KB220706114417100
+			SET "founderror=1"
+			)
+		)
+	
+	FOR %%K IN ('findstr /SIC:"Unable to connect to the study server at this time" DiskExport* 2^>nul') DO (
+		if not errorlevel 1 (
+			Echo Failed to retrieve study info 
+			Echo %%K
+			Echo See KB210726172723650
+			SET "founderror=1"
+			)
+		)
+	)
+
+if not defined founderror (
+	Echo Did not find any errors, please search logs manually for issues
+	)
+
+REM Echo Checking Full Disk Export Workflow:
+
+Echo This tool is used to quickly search for known issues. Confirm any issues found with supporting logs!
+goto :eof
 
 :help
 
@@ -643,7 +889,7 @@ Echo: [Optional] -e Error check; see notes below
 Echo: [Optional] -l LogPicker directory; see notes below
 Echo: [Optional] -s Search logs and perform checks for a specific StudyID
 Echo: [Optional] -p Used with -s, recursively search RUIDs for prior studies
-Echo: [Optional] -d Used with -s, search all RUIDs for the study
+Echo: [Optional] -d Used with -s and -e Slowness; Search all RUIDs for 
 Echo: [Optional] -h Output this help page
 Echo:
 Echo: [-l] Specifying LogPicker directory can provide additional log search functions 
@@ -697,4 +943,19 @@ exit /b
 For /F "tokens=2,4*" %%A IN ('findstr /S "!RUID!" "!LogPicker!\WebServer*.log*" 2^>nul') DO (
     Echo WebServer: %%A %%B %%C
     )
+exit /b
+
+:DiskRWConfig
+
+Echo Applied DiskRW configurations:
+FOR /F "tokens=2* delims= :" %%I IN ('findstr /V /B /C:"#" "%ALI_SYS_CONFIG_PATH%\DiskRW.base" 2^>nul') DO (
+	findstr /C:"%%I" "%ALI_SITE_CONFIG_PATH%\DiskRW.site" >nul 2>&1
+	if errorlevel 1 (
+        Echo %%I %%J
+    ) else (
+		FOR /F "tokens=2*" %%A IN ('findstr /C:"%%I" "%ALI_SITE_CONFIG_PATH%\DiskRW.site" 2^>nul') DO (
+			Echo %%A %%B
+			)
+		)
+	)
 exit /b
