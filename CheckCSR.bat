@@ -183,13 +183,21 @@ Echo.
 Echo: ------ Workstation Specs ------
 Echo.
 
-FOR /F "tokens=2,9*" %%I IN ('findstr /SC:"Starting McKesson Radiology Station" AliHRS*.log* 2^>nul') DO (
+FOR /F "tokens=2,9*" %%I IN ('findstr /SC:"Starting McKesson Radiology Station" StatRep\AliHRS*.log* 2^>nul') DO (
     SET "foundmatch=1"
     Echo:Version: %%J %%K
 	FOR /F "tokens=1,2,3,4 delims=:," %%W IN ("%%I") DO (SET "CSRStart=%%W%%X%%Y%%Z")
     )
+	
+If not defined foundmatch (
+	FOR /F "tokens=2,9*" %%I IN ('findstr /SC:"Starting McKesson Radiology Station" Staging\AliHRS*.log* 2^>nul') DO (
+		SET "foundmatch=1"
+		Echo:Version: %%J %%K
+		FOR /F "tokens=1,2,3,4 delims=:," %%W IN ("%%I") DO (SET "CSRStart=%%W%%X%%Y%%Z")
+		)
+	) else (SET "foundmatch=")
 
-FOR /F %%F IN ('dir /b /s ^| grep -i alihrs') DO (
+FOR /F %%F IN ('dir /b /s StatRep ^| grep -i alihrs') DO (
     FOR /F "tokens=2,8*" %%A in ('grep -i -A 4 "Loading McKesson Radiology Station HAL" "%%F" ^| grep -v HAL 2^>nul') do (
         SET "foundmatch=1"
         echo %%B %%C
@@ -197,6 +205,16 @@ FOR /F %%F IN ('dir /b /s ^| grep -i alihrs') DO (
         )
     )
 	
+If not defined foundmatch (
+	FOR /F %%F IN ('dir /b /s ^| grep -i alihrs') DO (
+		FOR /F "tokens=2,8*" %%A in ('grep -i -A 4 "Loading McKesson Radiology Station HAL" "%%F" ^| grep -v HAL 2^>nul') do (
+			SET "foundmatch=1"
+			echo %%B %%C
+			FOR /F "tokens=1,2,3,4 delims=:," %%W IN ("%%A") DO (SET "CSRStart=%%W%%X%%Y%%Z")
+			)
+		)
+	)
+
 If not defined foundmatch (
     echo Workstation Specs not Found
     ) else (SET "foundmatch=")
@@ -309,26 +327,39 @@ If not defined foundpriors (
 REM Study Checks
 	
 if defined StudyID (
+	Call :opentimes
 	if defined StudyCheck (
 		Echo.
 		Echo: ------ CheckStudy for StudyID !StudyID! ------
 		Echo.
 		For /F "delims=" %%G in ('checkstudy -s !StudyID! ^| grep -A 50 "Status:"') DO (
 			Echo %%G
+			SET "foundmatch=1"
 			)
+		If not defined foundmatch (
+			Echo CheckStudy on !StudyID! failed, please run this manually
+			) else (
+				SET "foundmatch="
+				)
 		Echo.
 		Echo ------ CheckIndex for StudyID !StudyID! ------
 		Echo.
 
 		For /F "delims=" %%F in ('checkindex -s !StudyID! ^| grep -A 50 "Bag Summary:"') DO (
 			Echo %%F
+			SET "foundmatch=1"
 			)
+		For /F "delims=" %%F in ('checkindex -s !StudyID! ^| grep -A 50 "Critical Errors:"') DO (
+			Echo %%F
+			SET "foundmatch=1"
+			)
+		If not defined foundmatch (
+			Echo CheckIndex on !StudyID! failed, please run this manually
+			) else (
+				SET "foundmatch="
+				)
 		Call :GeneralStudyCheck
 		)
-
-REM RUID Search on StudyID
-
-	Call :opentimes
 
 REM RUID Search on Priors
 
@@ -582,13 +613,24 @@ FOR /F "delims=" %%I IN ('findstr /SIC:"Overall impression object is NULL" AliHR
 	Echo %%I
 	Echo See KB211119174313903
 	SET "founderror=1"
+	Echo.
 	)
+	
+FOR /F "delims=" %%I IN ('findstr /SIC:"[IP] Error: Fail to retrieve the viewport output rectangle Source" AliHRS* 2^>nul') DO (
+	Echo Found Life-Size Calibration Mismatch
+	Echo %%I
+	Echo See KB210816154942807
+	SET "founderror=1"
+	Echo.
+	)
+
 
 FOR /F "delims=" %%I IN ('findstr /SIC:"code: 500, description: Status text in HTTP headers: Internal Server Error" AliDXVSal* 2^>nul') DO (
 	Echo Found Error While Creating Patient Context
 	Echo %%I
 	Echo See KB210723104644350
 	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "delims=" %%I IN ('findstr /SIC:"[IP] Error: Mismatch between pixel data size" AliHRS* 2^>nul') DO (
@@ -596,6 +638,31 @@ FOR /F "delims=" %%I IN ('findstr /SIC:"[IP] Error: Mismatch between pixel data 
 	Echo %%I
 	Echo See KB220930102759250
 	SET "founderror=1"
+	Echo.
+	)
+	
+FOR /F "delims=" %%I IN ('findstr /SIC:"[IP] Error: 48bit RGB images not supported" AliHRS* 2^>nul') DO (
+	Echo Found Unsupported 48-bit Image
+	Echo %%I
+	Echo See KB220930102759250
+	SET "founderror=1"
+	Echo.
+	)
+	
+FOR /F "delims=" %%I IN ('findstr /SIC:"[IP] Error: Fail to generate the output image Source" AliHRS* 2^>nul') DO (
+	Echo Found Pixel Data Mismatch
+	Echo %%I
+	Echo See KB220930102759250
+	SET "founderror=1"
+	Echo.
+	)
+	
+FOR /F "delims=" %%I IN ('findstr /SIC:"Failed to normailze pixel data" AliHRS* 2^>nul') DO (
+	Echo Found Pixel Data Mismatch
+	Echo %%I
+	Echo See KB220930102759250
+	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "tokens=2" %%I in ('dbs -s "!StudyID!" ^| grep BagID:') DO (
@@ -604,6 +671,7 @@ FOR /F "tokens=2" %%I in ('dbs -s "!StudyID!" ^| grep BagID:') DO (
 		Echo %%A %%B %%C %%D
 		Echo See KB210719153436890
 		SET "founderror=1"
+		Echo.
 		)
 	)
 
@@ -623,7 +691,7 @@ FOR /F "tokens=* delims=" %%I IN ('findstr /V /B /C:"#" "%ALI_SITE_CONFIG_PATH%\
 	Echo %%I
 	)
 Echo.
-Echo Checking for errors in KB022226911434521:
+Echo --- Checking for errors in KB022226911434521 ---
 Echo Scenario 4B, and 5 requires LogPicker, Scenario 1, 2B, and 6 cannot be checked
 Echo.
 
@@ -634,6 +702,7 @@ FOR /F "tokens=13" %%F in ('findstr /SIC:"Trying to create virtual DICOMDIR for 
 		Echo !PathCheck!
 		Echo See KB220217115504897 or KB022226911434521:Scenario 2A
 		SET "founderror=1"
+		Echo.
 		)
 	)
 
@@ -642,20 +711,23 @@ FOR /F "delims=" %%I IN ('findstr /SIC:"unsupported SOP" HmiWebApps* 2^>nul') DO
 	Echo %%I
 	Echo See KB210729145051080, KB230525104020800, or KB022226911434521:Scenario 3A
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%A IN ('findstr /SIC:"Transfer Syntax not found" MediaInspector* 2^>nul') DO (
-	Echo Found missing Transfer Syntax
+	Echo Found Missing Transfer Syntax
 	Echo %%A
 	Echo See KB022226911434521:Scenario 3B
 	SET "founderror=1"
+	Echo.
 	)
 	
-FOR /F "delims=" %%D IN ('findstr /SIC:"unsupported Transfer Syntax" HmiWebApps* 2^>nul') DO (
+FOR /F "tokens=1,2,10,11,12,13,14,15,16" %%A IN ('findstr /SIC:"unsupported Transfer Syntax" HmiWebApps* 2^>nul') DO (
 	Echo Found Unsupported Transfer Syntax
-	Echo %%D
+	Echo %%A %%B - %%C %%D %%E %%F %%G %%H %%I
 	Echo See KB210720144545237 or KB022226911434521:Scenario 3C
 	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "delims=" %%X IN ('findstr /SIC:"Data error (cyclic redundancy check)" HmiWebApps* 2^>nul') DO (
@@ -663,6 +735,7 @@ FOR /F "delims=" %%X IN ('findstr /SIC:"Data error (cyclic redundancy check)" Hm
 	Echo %%X
 	Echo See KB022226911434521:Scenario 3D
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%G IN ('findstr /SIC:"AddPatient - Unknown error" HmiWebApps* 2^>nul') DO (
@@ -670,6 +743,7 @@ FOR /F "delims=" %%G IN ('findstr /SIC:"AddPatient - Unknown error" HmiWebApps* 
 	Echo %%G
 	Echo See KB022226911434521:Scenario 3E
 	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "delims=" %%B IN ('findstr /SIC:"The network name cannot be found" HmiWebApps* 2^>nul') DO (
@@ -677,6 +751,7 @@ FOR /F "delims=" %%B IN ('findstr /SIC:"The network name cannot be found" HmiWeb
 	Echo %%B
 	Echo See KB022226911434521:Scenario 4A
 	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "delims=" %%C IN ('findstr /SIC:"is not allowed (allowed extensions:" HmiWebApps* 2^>nul') DO (
@@ -684,6 +759,7 @@ FOR /F "delims=" %%C IN ('findstr /SIC:"is not allowed (allowed extensions:" Hmi
 	Echo %%C
 	Echo See KB022226911434521:Scenario 4C
 	SET "founderror=1"
+	Echo.
 	)
 
 if defined LogPicker (
@@ -692,6 +768,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB210924174140653 or KB022226911434521:Scenario 4B
 		SET "founderror=1"
+		Echo.
 		)
 
 	FOR /F "delims=" %%T IN ('findstr /SIC:"Failed to initialize association" DiskImportChild* 2^>nul') DO (
@@ -699,6 +776,7 @@ if defined LogPicker (
 		Echo %%T
 		Echo See KB250526134630553, KB210722162452767, or KB022226911434521:Scenario 5
 		SET "founderror=1"
+		Echo.
 		)
 	)
 	
@@ -720,8 +798,8 @@ FOR /F "tokens=* delims=" %%I IN ('findstr /V /B /C:"#" "%ALI_SITE_CONFIG_PATH%\
 	Echo %%I
 	)
 Echo.
-Echo Checking for errors in KB221019131513817:
-Echo Scenario 1 and 6 requires LogPicker, Scenario 3 cannot be checked
+Echo --- Checking for errors in KB221019131513817 ---
+Echo. Scenario 1 and 6 requires LogPicker, Scenario 3 cannot be checked
 Echo.
 
 FOR /F "delims=" %%I IN ('findstr /SIC:"The current media is not supported" DiskBurnerService* 2^>nul') DO (
@@ -729,6 +807,7 @@ FOR /F "delims=" %%I IN ('findstr /SIC:"The current media is not supported" Disk
 	Echo %%I
 	Echo See KB221019131513817:Scenario 2
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%A IN ('findstr /SIC:"fails to return true to IsReady query so returning false." HmiWebApps* ^| grep "Media.IsPresent()" 2^>nul') DO (
@@ -736,6 +815,7 @@ FOR /F "delims=" %%A IN ('findstr /SIC:"fails to return true to IsReady query so
 	Echo %%A
 	Echo See KB221019131513817:Scenario 2
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%D IN ('findstr /SIC:"ExportStudiesOnServer() failed, return code = 505," HmiWebApps* 2^>nul') DO (
@@ -743,6 +823,7 @@ FOR /F "delims=" %%D IN ('findstr /SIC:"ExportStudiesOnServer() failed, return c
 	Echo %%D
 	Echo See KB221019131513817:Scenario 4
 	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "delims=" %%B IN ('findstr /SIC:"call to UpdateAdvancedViewer() returned Failed" HmiWebApps* 2^>nul') DO (
@@ -750,6 +831,7 @@ FOR /F "delims=" %%B IN ('findstr /SIC:"call to UpdateAdvancedViewer() returned 
 	Echo %%B
 	Echo See KB022226911434521:Scenario 5
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%Y IN ('findstr /SIC:"CheckCreateNewDirectory() failed for ClientAdvancedViewerDirectory" HmiWebApps* 2^>nul') DO (
@@ -757,6 +839,7 @@ FOR /F "delims=" %%Y IN ('findstr /SIC:"CheckCreateNewDirectory() failed for Cli
 	Echo %%Y
 	Echo See KB022226911434521:Scenario 5
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%Z IN ('findstr /SIC:"caught exception = Some or all identity references could not be translated" HmiWebApps* 2^>nul') DO (
@@ -764,6 +847,7 @@ FOR /F "delims=" %%Z IN ('findstr /SIC:"caught exception = Some or all identity 
 	Echo %%Z
 	Echo See KB022226911434521:Scenario 5
 	SET "founderror=1"
+	Echo.
 	)
 
 FOR /F "delims=" %%B IN ('findstr /SIC:"_exportController.ExportStudiesOnServer() failed, return code = 708," HmiWebApps* 2^>nul') DO (
@@ -771,6 +855,7 @@ FOR /F "delims=" %%B IN ('findstr /SIC:"_exportController.ExportStudiesOnServer(
 	Echo %%B
 	Echo See KB022226911434521:Scenario 6
 	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%B IN ('findstr /SIC:"Could not get HRS-D access COM error" HmiWebApps* 2^>nul') DO (
@@ -778,6 +863,15 @@ FOR /F "delims=" %%B IN ('findstr /SIC:"Could not get HRS-D access COM error" Hm
 	Echo %%B
 	Echo See KB210721122002000
 	SET "founderror=1"
+	Echo.
+	)
+	
+FOR /F "delims=" %%B IN ('findstr /SIC:"Exception = An error occurred while receiving the HTTP response" HmiWebApps* 2^>nul') DO (
+	Echo Found HTTP Response Error
+	Echo %%B
+	Echo See CASE1218900, CASE1131647, and ACTN02925526
+	SET "founderror=1"
+	Echo.
 	)
 	
 FOR /F "delims=" %%B IN ('findstr /SIC:"Memory is locked" HmiWebApps* 2^>nul') DO (
@@ -785,6 +879,7 @@ FOR /F "delims=" %%B IN ('findstr /SIC:"Memory is locked" HmiWebApps* 2^>nul') D
 	Echo %%B
 	Echo See KB210721122002000
 	SET "founderror=1"
+	Echo.
 	)
 
 if defined LogPicker (
@@ -793,6 +888,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB221019131513817:Scenario 1
 		SET "founderror=1"
+		Echo.
 		)
 
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Not enough space on selected media" DiskExport* 2^>nul') DO (
@@ -800,6 +896,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB221019131513817:Scenario 6
 		SET "founderror=1"
+		Echo.
 		)
 
 	FOR /F "delims=" %%K IN ('findstr /SIC:"The network path was not found" HmiWebService* 2^>nul') DO (
@@ -807,6 +904,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB210721122002000
 		SET "founderror=1"
+		Echo.
 		)
 
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Failed to create directory" DiskExport* 2^>nul') DO (
@@ -814,6 +912,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB210721122002000
 		SET "founderror=1"
+		Echo.
 		)
 	
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Failed to export advanced viewer metadata on media" DiskExport* 2^>nul') DO (
@@ -821,6 +920,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB220706114417100
 		SET "founderror=1"
+		Echo.
 		)
 
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Failed to export advanced viewer metadata" DiskExport* 2^>nul') DO (
@@ -828,6 +928,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB220706114417100
 		SET "founderror=1"
+		Echo.
 		)
 	
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Call to Backend Pacs SAL OpenStudy method failed" ConvAgnt* 2^>nul') DO (
@@ -835,6 +936,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB220706114417100
 		SET "founderror=1"
+		Echo.
 		)
 
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Failed to save Metadata" ConvAgnt* 2^>nul') DO (
@@ -842,6 +944,7 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB220706114417100
 		SET "founderror=1"
+		Echo.
 		)
 	
 	FOR /F "delims=" %%K IN ('findstr /SIC:"Unable to connect to the study server at this time" DiskExport* 2^>nul') DO (
@@ -849,14 +952,22 @@ if defined LogPicker (
 		Echo %%K
 		Echo See KB210726172723650
 		SET "founderror=1"
+		Echo.
 		)
 	)
 
+FOR /F "delims=" %%A IN ('findstr /SIC:"ExportStudiesOnServer() failed" HmiWebApps* 2^>nul') DO (
+	Echo Found Generic Error
+	Echo %%A
+	SET "founderror=1"
+	Echo.
+	)
+	
 if not defined founderror (
-	Echo Did not find any errors, please search logs manually for issues
-	) else (SET "founderror=")
+	Echo Did not find any matches for known issues
+	Echo.
+	)
 
-Echo.
 Echo This tool is used to quickly search for known issues. Confirm any issues found with supporting logs!
 goto :eof
 
@@ -884,7 +995,7 @@ Echo:      below for recommended logs pulled for each error check option.
 Echo:
 Echo: [-e] Error check can take additional option for additional functions.
 Echo:      Accepted options listed below with notes and required logpicker files:
-Echo:      DiskImport - HmiWebService*, DiskImportChilSrv*
+Echo:      DiskImport - HmiWebService*, DiskImportChildSrv*
 Echo:      DiskExport - HmiWebService*, DiskExport*, ConvAgnt*
 Echo:      Slowness   - WebApi*, AliWebBEx*, WebServer*
 Echo:      Study      - Used with -s, Runs CheckStudy, CheckIndex, and checks for common errors
@@ -930,19 +1041,4 @@ exit /b
 For /F "tokens=2,4*" %%A IN ('findstr /S "!RUID!" "!LogPicker!\WebServer*.log*" 2^>nul') DO (
     Echo WebServer: %%A %%B %%C
     )
-exit /b
-
-:DiskRWConfig
-
-Echo Applied DiskRW configurations:
-FOR /F "tokens=2* delims= :" %%I IN ('findstr /V /B /C:"#" "%ALI_SYS_CONFIG_PATH%\DiskRW.base" 2^>nul') DO (
-	findstr /C:"%%I" "%ALI_SITE_CONFIG_PATH%\DiskRW.site" >nul 2>&1
-	if errorlevel 1 (
-        Echo %%I %%J
-    ) else (
-		FOR /F "tokens=2*" %%A IN ('findstr /C:"%%I" "%ALI_SITE_CONFIG_PATH%\DiskRW.site" 2^>nul') DO (
-			Echo %%A %%B
-			)
-		)
-	)
 exit /b
