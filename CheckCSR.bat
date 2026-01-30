@@ -19,7 +19,7 @@ Echo:#         program:  CheckCSR                                               
 Echo:#                                                                                   #
 Echo:#         purpose:  Tool to quickly pull info from a CSR                            #
 Echo:#                                                                                   #
-Echo:#         version:  1.0.0 (.20Jan26.AndrewD)                                        #
+Echo:#         version:  1.0.0 (.29Jan26.AD)                                             #
 Echo:#                                                                                   #
 Echo:#          author:  Andrew Doan                                                     #
 Echo:#                                                                                   #
@@ -1042,3 +1042,4 @@ For /F "tokens=2,4*" %%A IN ('findstr /S "!RUID!" "!LogPicker!\WebServer*.log*" 
     Echo WebServer: %%A %%B %%C
     )
 exit /b
+
