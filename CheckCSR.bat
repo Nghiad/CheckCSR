@@ -19,7 +19,7 @@ Echo:#         program:  CheckCSR                                               
 Echo:#                                                                                   #
 Echo:#         purpose:  Tool to quickly pull info from a CSR                            #
 Echo:#                                                                                   #
-Echo:#         version:  1.0.0 (.29Jan26.AD)                                             #
+Echo:#         version:  1.0.1 (.02Feb26.AndrewD)                                        #
 Echo:#                                                                                   #
 Echo:#          author:  Andrew Doan                                                     #
 Echo:#                                                                                   #
@@ -162,8 +162,14 @@ if /I "%CSR:~-4%"==".zip" (
         pushd "!CSR!\Logs\C_\ChangeHealthcareApps\logs"
         )
 
-For %%A IN ("!CSR!") DO (SET "CSRName=%%~nxA")
-For /F "tokens=1 delims=_" %%X IN ("!CSRName!") DO (SET "WID=%%X")
+FOR /F "tokens=10" %%A in ('findstr /SC:"Workstation name:" AliHRS* 2^>nul') do (
+	SET "WID=%%A"
+	)
+	
+if not defined WID (
+	For %%A IN ("!CSR!") DO (SET "CSRName=%%~nxA")
+	For /F "tokens=1 delims=_" %%X IN ("!CSRName!") DO (SET "WID=%%X")
+	)
 
 if defined StudyID (
     Echo StudyID:  !StudyID!
@@ -223,7 +229,7 @@ Echo.
 Echo: ------ Workstation Configurations ------
 Echo.
 
-FOR /F "tokens=2* delims=:" %%I IN ('findstr "!WID!" "%ALI_SITE_CONFIG_PATH%\*.site" 2^>nul') DO (
+FOR /F "tokens=5* delims=\" %%I IN ('findstr "!WID!" "%ALI_SITE_CONFIG_PATH%\*.site" 2^>nul') DO (
     SET "foundmatch=1"
     Echo %%I %%J
     )
@@ -232,7 +238,7 @@ If not defined foundmatch (
     echo No Workstation Specific Configurations Found
     ) else (SET "foundmatch=")
 
-FOR /F "tokens=2* delims=:" %%I IN ('findstr "LOG_PERFORMANCE_DATA" "%ALI_SITE_CONFIG_PATH%\emviewer.site" 2^>nul') DO (
+FOR /F "tokens=5* delims=\" %%I IN ('findstr "LOG_PERFORMANCE_DATA" "%ALI_SITE_CONFIG_PATH%\emviewer.site" 2^>nul') DO (
     Echo %%I %%J
     )
 
@@ -432,16 +438,25 @@ FOR /F "tokens=2,8*" %%I IN ('findstr /SC:"display first image for" AliHRS*.log*
 
 FOR /F "tokens=2,8*" %%A IN ('findstr /SC:"Fire loading" AliHRS*.log* ^| grep !StudyID! 2^>nul') DO (
     SET "foundmatch=1"
-    Echo %%A %%B %%C
+	SET "string=%%A %%B %%C"
     FOR /F "tokens=1,2,3,4 delims=:," %%W IN ("%%A") DO (SET "StudyEndTime=%%W%%X%%Y%%Z")
     )
+if defined string (
+	Echo !string!
+	SET "string="
+	)
 
 FOR /F "tokens=2,8*" %%A IN ('grep -i "Performance data (Part 1) for study ID = !StudyID!" StatRep/* 2^>nul') DO (
     SET "foundmatch=1"
-    Echo %%A %%B %%C
+	SET "string=%%A %%B %%C"
+	SET "LastMatch=%%A"
     )
+if defined string (
+	Echo !string!
+	SET "string="
+	)
 
-FOR /F "tokens=2*" %%A IN ('grep -i -A 6 "Performance data (Part 1) for study ID = !StudyID!" StatRep/* ^| grep -v "Performance" 2^>nul') DO (
+FOR /F "tokens=2*" %%A IN ('grep -i -A 6 "!LastMatch!" StatRep/* ^| grep -A 6 "Performance data (Part 1) for study ID = !StudyID!"  ^| grep -v "Performance" 2^>nul') DO (
     SET "foundmatch=1"
     Echo %%A %%B
     )
@@ -449,14 +464,21 @@ FOR /F "tokens=2*" %%A IN ('grep -i -A 6 "Performance data (Part 1) for study ID
 if exist Staging/HRS (
 	FOR /F "tokens=2,8*" %%A IN ('grep -i "Performance data (Part 1) for study ID = !StudyID!" Staging/HRS/* 2^>nul') DO (
 		SET "foundmatch=1"
-		Echo %%A %%B %%C
+		SET "string=%%A %%B %%C"
+		SET "LastMatch=%%A"
+		)
+	if defined string (
+		Echo !string!
+		SET "string="
 		)
 
-	FOR /F "tokens=2*" %%A IN ('grep -i -A 6 "Performance data (Part 1) for study ID = !StudyID!" Staging/HRS/* ^| grep -v "Performance" 2^>nul') DO (
+	FOR /F "tokens=2*" %%A IN ('grep -i -A 6 "!LastMatch!" StatRep/* ^| grep -A 6 "Performance data (Part 1) for study ID = !StudyID!" Staging/HRS/* ^| grep -v "Performance" 2^>nul') DO (
 		SET "foundmatch=1"
 		Echo %%A %%B
 		)
 	)
+
+SET "LastMatch="
 
 If not defined foundmatch (
     echo Study times not found
@@ -606,7 +628,7 @@ exit /b
 :GeneralStudyCheck
 
 Echo.
-Echo: ------ Open Study Check ------
+Echo: ------ Checking Common Study Errors ------
 Echo.
 FOR /F "delims=" %%I IN ('findstr /SIC:"Overall impression object is NULL" AliHRS* 2^>nul') DO (
 	Echo Found Bad CAD Files
@@ -1042,4 +1064,3 @@ For /F "tokens=2,4*" %%A IN ('findstr /S "!RUID!" "!LogPicker!\WebServer*.log*" 
     Echo WebServer: %%A %%B %%C
     )
 exit /b
-
