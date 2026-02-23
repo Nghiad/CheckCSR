@@ -19,7 +19,7 @@ Echo:#         program:  CheckCSR                                               
 Echo:#                                                                                   #
 Echo:#         purpose:  Tool to quickly pull info from a CSR                            #
 Echo:#                                                                                   #
-Echo:#         version:  1.0.1 (.02Feb26.AndrewD)                                        #
+Echo:#         version:  1.2.0 (.19Feb26.AndrewD)                                        #
 Echo:#                                                                                   #
 Echo:#          author:  Andrew Doan                                                     #
 Echo:#                                                                                   #
@@ -152,13 +152,23 @@ if defined SlownessCheck (
 	    )
 	)
 
-REM Verify CSR is not zipped
+REM Stage CSR file and directory
 
 if /I "%CSR:~-4%"==".zip" (
-    Echo CSR not Extracted
-    call :help
-    goto :eof
-    ) else (
+	Echo Extracting CSR...
+	Echo. 
+	if exist "C:\Temp\CheckCSR-temp" (
+		rmdir /S /Q "C:\Temp\CheckCSR-temp"
+		)
+	mkdir "C:\Temp\CheckCSR-temp"
+	SET "cleanup=1"
+	powershell "Expand-Archive -Path '!CSR!' -DestinationPath 'C:\Temp\CheckCSR-temp'"
+	if errorlevel 1 (
+		Echo Failed to extract CSR, please manually extract the CSR and try again.
+		goto :cleanup
+		)
+	pushd "C:\Temp\CheckCSR-temp\Logs\C_\ChangeHealthcareApps\logs"
+   	) else (
         pushd "!CSR!\Logs\C_\ChangeHealthcareApps\logs"
         )
 
@@ -170,7 +180,7 @@ if not defined WID (
 	For %%A IN ("!CSR!") DO (SET "CSRName=%%~nxA")
 	For /F "tokens=1 delims=_" %%X IN ("!CSRName!") DO (SET "WID=%%X")
 	)
-
+	
 if defined StudyID (
     Echo StudyID:  !StudyID!
 	)
@@ -389,6 +399,31 @@ REM RUID Search on Priors
 REM Performance Check on Opened Studies
 
 if defined SlownessCheck (
+	Echo.
+	Echo: ------ First Image Load Times ------
+	Echo.
+	FOR /F "tokens=2,8*" %%I IN ('findstr /SC:"load the first image for" AliHRS*.log* 2^>nul') DO (
+		SET "foundmatch=1"
+		Echo %%I %%J %%K
+		)
+		If not defined foundmatch (
+			echo No First Image Load Times Found
+			) else (
+				SET "foundmatch="
+				)
+	Echo.
+	Echo: ------ First Image Display Times ------
+	Echo.
+	FOR /F "tokens=2,8*" %%I IN ('findstr /SC:"display first image for" AliHRS*.log* 2^>nul') DO (
+		SET "foundmatch=1"
+		Echo %%I %%J %%K
+		)
+		If not defined foundmatch (
+			echo No First Image Display Times Found
+			) else (
+				SET "foundmatch="
+				)
+
 	Call :ExcessiveTimes
 	FOR /F "tokens=17" %%A IN (
 	'findstr /SC:"FINISHED CREATING STUDY CONTEXT for Patient" AliHRS*.log* 2^>nul') DO (
@@ -410,6 +445,17 @@ if defined SlownessCheck (
 popd
 Echo.
 Echo This tool is supplementary to troubleshooting. Confirm all issues with supporting logs!
+
+REM cleanup extracted CSR files
+
+:cleanup
+
+if defined cleanup (
+	Echo.
+	Echo Cleaning up extracted files...
+	rmdir /S /Q "C:\Temp\CheckCSR-temp"
+	)
+
 GOTO :eof
 
 REM ------ FUNCTIONS ------
@@ -460,6 +506,7 @@ FOR /F "tokens=2*" %%A IN ('grep -i -A 6 "!LastMatch!" StatRep/* ^| grep -A 6 "P
     SET "foundmatch=1"
     Echo %%A %%B
     )
+SET "LastMatch="
 
 if exist Staging/HRS (
 	FOR /F "tokens=2,8*" %%A IN ('grep -i "Performance data (Part 1) for study ID = !StudyID!" Staging/HRS/* 2^>nul') DO (
@@ -476,9 +523,8 @@ if exist Staging/HRS (
 		SET "foundmatch=1"
 		Echo %%A %%B
 		)
+	SET "LastMatch="
 	)
-
-SET "LastMatch="
 
 If not defined foundmatch (
     echo Study times not found
@@ -714,7 +760,10 @@ FOR /F "tokens=* delims=" %%I IN ('findstr /V /B /C:"#" "%ALI_SITE_CONFIG_PATH%\
 	)
 Echo.
 Echo --- Checking for errors in KB022226911434521 ---
-Echo Scenario 4B, and 5 requires LogPicker, Scenario 1, 2B, and 6 cannot be checked
+Echo. Scenario 1, 2B, and 6 cannot be checked
+if not defined LogPicker (
+	Echo. Scenario 4B, and 5 requires LogPicker, will not be checked
+	)
 Echo.
 
 FOR /F "tokens=13" %%F in ('findstr /SIC:"Trying to create virtual DICOMDIR for path" MediaInspector* 2^>nul') DO (
@@ -821,7 +870,10 @@ FOR /F "tokens=* delims=" %%I IN ('findstr /V /B /C:"#" "%ALI_SITE_CONFIG_PATH%\
 	)
 Echo.
 Echo --- Checking for errors in KB221019131513817 ---
-Echo. Scenario 1 and 6 requires LogPicker, Scenario 3 cannot be checked
+Echo. Scenario 3 cannot be checked
+if not defined LogPicker (
+	Echo Scenario 1 and 6 requires LogPicker, will not be checked
+	)
 Echo.
 
 FOR /F "delims=" %%I IN ('findstr /SIC:"The current media is not supported" DiskBurnerService* 2^>nul') DO (
@@ -1003,7 +1055,7 @@ Echo.
 Echo "Usage: CheckCSR -c <CSR> [-e <Option>] [-l <LogPicker>] [-s <StudyID>] [-p/-d/-h]"
 Echo.
 Echo: Options:
-Echo: [required] -c Extracted CSR directory
+Echo: [required] -c CSR file
 Echo: [Optional] -e Error check; see notes below
 Echo: [Optional] -l LogPicker directory; see notes below
 Echo: [Optional] -s Search logs and perform checks for a specific StudyID
@@ -1016,7 +1068,7 @@ Echo:      based on the search or inputed error check option. See error check no
 Echo:      below for recommended logs pulled for each error check option.
 Echo:
 Echo: [-e] Error check can take additional option for additional functions.
-Echo:      Accepted options listed below with notes and required logpicker files:
+Echo:      Accepted options listed below with logpicker files and notes:
 Echo:      DiskImport - HmiWebService*, DiskImportChildSrv*
 Echo:      DiskExport - HmiWebService*, DiskExport*, ConvAgnt*
 Echo:      Slowness   - WebApi*, AliWebBEx*, WebServer*
@@ -1026,41 +1078,8 @@ Echo: Note:
 Echo.
 Echo: Use ^> to redirect output
 Echo: WID must not contain _
-Echo: CSR must be the extracted directory
 Echo: For best results, ensure CSR captures client initialization logs
 Echo: Detailed (-d) and Prior (-p) search can take awhile
 Echo:
 
-exit /b
-
-REM ------ UNUSED FUNCTIONS ------
-
-:OpenStudyCall
-
-Echo.
-Echo -- Open Study Call --
-Echo.
-FOR /F "tokens=2,8-19" %%A IN ('findstr /SIC "!StudyID!" alidxvsal*.log* ^| grep GETSTUDYFILELIST 2^>nul') DO (
-    SET "foundmatch=1"
-    Echo AliDXVSal: %%A %%B %%C : %%E %%F %%G %%H %%I %%J %%K %%L %%M
-    if defined LogPicker (
-        SET "RUID=%%C"
-        Call :RUIDWebServer
-        Call :RUIDAliWebBEx
-        Echo.
-        )
-    )
-    
-If not defined foundmatch (
-    echo Open Study Call not found
-    )
-SET "foundmatch="
-
-exit /b
-
-:RUIDWebServer
-
-For /F "tokens=2,4*" %%A IN ('findstr /S "!RUID!" "!LogPicker!\WebServer*.log*" 2^>nul') DO (
-    Echo WebServer: %%A %%B %%C
-    )
 exit /b
