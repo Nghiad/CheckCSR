@@ -1,20 +1,77 @@
-List of Commands used in the script:
-hostname
-whoami
-now
-findstr
-grep
-egrep
-gawk
-DBDumpTDS
-checkstudy
-checkindex
-view_tag_for_bag
-rmdir /S /Q
-mkdir
-powershell expand-archive
+=============
+Introduction
+=============
+CheckCSR is an internal tool designed to quickly parse CSRs for known issues or errors that stand out. The tool is build around 4 troubleshooting KBs on workflows that typically requires the CSRs be checked. This tool is supplementary to troubleshooting and support agents will still be required to confirm any issues found with supporting logs.
 
-Script Breakdown:
+The 4 primary troubleshooting KBs used:
+SolutionID: 022226318283523 - Troubleshooting Why A Study Will Not Open
+SolutionID: 022226911434521 - Troubleshooting Disk Import
+SolutionID: 221019131513817 - Troubleshooting CD/Disk Export
+SolutionID: 220131165305857 - Troubleshooting Slowness Opening Studies In Radiology PACS
+
+
+==============================
+CheckCSR Tool Help/Usage Page
+==============================
+
+Description: Pull and parse information in a CSR
+
+Usage: CheckCSR -c <CSR> [-e <Option>] [-l <LogPicker>] [-s <StudyID>] [-p/-d/-h]
+
+Options:
+[required] -c CSR file
+[Optional] -e Error check; see notes below
+[Optional] -l LogPicker directory; see notes below
+[Optional] -s Search logs and perform checks for a specific StudyID
+[Optional] -p Used with -s, recursively search RUIDs for prior studies
+[Optional] -d Used with -s and -e Slowness; Search all RUIDs
+[Optional] -h Output this help page
+
+[-l] Specifying LogPicker directory can provide additional log search functions 
+     based on the search or inputed error check option. See error check notes 
+     below for recommended logs pulled for each error check option.
+
+[-e] Error check can take additional option for additional functions.
+     Accepted options listed below with logpicker files and notes:
+     DiskImport - HmiWebService*, DiskImportChildSrv*
+     DiskExport - HmiWebService*, DiskExport*, ConvAgnt*
+     Slowness   - WebApi*, AliWebBEx*, WebServer*
+     Study      - Used with -s, Runs CheckStudy, CheckIndex, and checks for common errors
+
+Note:
+Use > to redirect tool output
+WID must not contain _
+For best results, ensure CSR captures client initialization logs
+Detailed (-d) and Prior (-p) search may cause tool to run for too long
+
+
+==========
+Functions
+==========
+-                Pulls workstation specs from aliHRS initialization
+-                Pulls workstation configs from WID across all site files
+-                Checks if auto-registration is enabled and auto-reg times
+-                Check for all studies opened in AliHRS, sorted by anchor and priors
+-                Checked Memory Load from AliHRS
+(-l)             Search server-side logs when applicable; WebApi, DiskExport, etc
+(-e slowness)    Checks performance data; open study speeds and times for all studies
+(-e slowness)    Search for all FileFragments over 1s
+(-e slowness -l) Match RUIDs between CSR and Server logs
+(-e slowness -d) Search for all FileFragments
+(-s)             Check for prior studies opened in AliHRS
+(-s)             Checks performance data; open study speeds and times
+(-s)             Search for all FileFragments over 1s for this study
+(-s -d)          Search for all FileFragments for this study
+(-s -e study)    Runs checkstudy and checkindex
+(-s -e study)    Checks for open studies errors in KB022226318283523
+(-e diskimport)  Checks for known DiskImport issues in KB022226911434521
+(-e diskexport)  Checks for known DiskExport issues in KB221019131513817
+
+
+=================
+Script Breakdown
+=================
+
 - Pulls info to match standard tool output formats with current time, user and host running the tool
 	Uses hostname, whoami, and now
 
@@ -48,7 +105,6 @@ Script Breakdown:
 	Searches WID through all site files
 	Specifically checks if LOG_PERFORMANCE_DATA and AutoRegistration is enabled
 
-
 - Pull misc information; 
 	Checks Physical Memory Load and auto-reg times from in AliHRS
 	Search for studies opened
@@ -62,12 +118,10 @@ Script Breakdown:
 		checks for errors in KB022226911434521
 		notes some scenarios cannot be checked or requires -l
 
-
 	diskexport:
 		Dumps all configurations in DiskRW.site
 		checks for errors in KB221019131513817
 		notes some scenarios cannot be checked or requires -l
-
 
 	study:
 		Uses CheckStudy and CheckIndex
@@ -89,23 +143,20 @@ Script Breakdown:
 	If CSR was extracted through this script, delete "C:\Temp\CheckCSR-temp"
 
 
-Functions:
--                Pulls workstation specs from aliHRS initialization
--                Pulls workstation configs from WID across all site files
--                Checks if auto-registration is enabled and auto-reg times
--                Check for all studies opened in AliHRS, sorted by anchor and priors
--                Checked Memory Load from AliHRS
-(-l)             Search server-side logs when applicable; WebApi, DiskExport, etc
-(-e slowness)    Checks performance data; open study speeds and times for all studies
-(-e slowness)    Search for all FileFragments over 1s
-(-e slowness -l) Match RUIDs between CSR and Server logs
-(-e slowness -d) Search for all FileFragments
-(-s)             Check for prior studies opened in AliHRS
-(-s)             Checks performance data; open study speeds and times
-(-s)             Search for all FileFragments over 1s for this study
-(-s -d)          Search for all FileFragments for this study
-(-s -e study)    Runs checkstudy and checkindex
-(-s -e study)    Checks for open studies errors in KB022226318283523
-(-e diskimport)  Checks for known DiskImport issues in KB022226911434521
-(-e diskexport)  Checks for known DiskExport issues in KB221019131513817
-
+==============================
+Commands called in the script
+==============================
+hostname
+whoami
+now
+findstr
+grep
+egrep
+gawk
+DBDumpTDS
+checkstudy
+checkindex
+view_tag_for_bag
+rmdir /S /Q
+mkdir
+powershell expand-archive
