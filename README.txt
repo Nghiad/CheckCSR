@@ -9,6 +9,19 @@ SolutionID: 022226911434521 - Troubleshooting Disk Import
 SolutionID: 221019131513817 - Troubleshooting CD/Disk Export
 SolutionID: 220131165305857 - Troubleshooting Slowness Opening Studies In Radiology PACS
 
+=============
+Installation
+=============
+This tool is pending approval to be added into toolkit. Until then, you will need to manually copy this tool and paste it onto a site to use.
+
+Steps:
+	1. Connect to a site
+	2. Create a new text file in a temporary directory
+	3. Copy the full contents of the tool
+	4. Paste the entire contents of the tool into the text file
+	5. Rename the created file to "CheckCSR.bat"
+	6. From the temporary directory, use the tool with "CheckCSR.bat"
+		a) From any directory, call the tool with the UNC path
 
 ==============================
 CheckCSR Tool Help/Usage Page
@@ -160,3 +173,4 @@ view_tag_for_bag
 rmdir /S /Q
 mkdir
 powershell expand-archive
+
